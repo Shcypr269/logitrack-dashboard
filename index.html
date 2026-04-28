@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LogiTrack AI — Smart Supply Chain Dashboard</title>
+  <meta name="description" content="AI-powered supply chain disruption prediction and autonomous rerouting for Indian logistics">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
+</head>
+<body>
+
+<!-- ═══════ Dashboard App (No Auth — Direct ML Engine) ═══════ -->
+<div id="appLayout" class="app-layout">
+  <div class="bg-mesh"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">🚚</div>
+      <div><h1>LogiTrack AI</h1><span>Supply Chain Intelligence</span></div>
+    </div>
+    <div class="sidebar-nav">
+      <a class="active" data-page="dashboard" onclick="navigate('dashboard')"><span class="icon">📊</span> Dashboard</a>
+      <a data-page="anomaly" onclick="navigate('anomaly')"><span class="icon">🔍</span> Anomaly Detection</a>
+      <a data-page="optimizer" onclick="navigate('optimizer')"><span class="icon">🚚</span> Transport Optimizer</a>
+      <a data-page="simulator" onclick="navigate('simulator')"><span class="icon">🧪</span> What-If Simulator</a>
+      <div class="divider"></div>
+      <a data-page="explainability" onclick="navigate('explainability')"><span class="icon">🧠</span> Explainability</a>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="avatar">ML</div>
+        <div><div class="user-name">ML Dashboard</div><div class="user-role">Direct Engine Access</div></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- ═══ DASHBOARD ═══ -->
+    <section id="page-dashboard" class="page-section active">
+      <div class="page-header">
+        <h2>Dashboard Overview</h2>
+        <p>Real-time supply chain intelligence powered by ML models · Engine: <code style="color:var(--green);font-size:12px">logitrackai.onrender.com</code></p>
+      </div>
+      <div class="metrics-grid" id="dashMetrics">
+        <div class="metric-card accent"><div class="metric-icon">📈</div><div class="metric-value">90.5%</div><div class="metric-label">Model Accuracy</div><div class="metric-change up">↑ XGBoost + LightGBM</div></div>
+        <div class="metric-card green"><div class="metric-icon">💰</div><div class="metric-value" id="m-penalties">...</div><div class="metric-label">Penalties Prevented</div><div class="metric-change up">↑ SLA optimization</div></div>
+        <div class="metric-card red"><div class="metric-icon">🚨</div><div class="metric-value" id="m-anomalies">...</div><div class="metric-label">Anomalies Detected</div><div class="metric-change">Fleet-wide scan</div></div>
+        <div class="metric-card blue"><div class="metric-icon">🌿</div><div class="metric-value" id="m-co2">...</div><div class="metric-label">CO₂ Saved</div><div class="metric-change up">↑ Route optimization</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Risk Distribution</div><div class="card-subtitle">Current fleet anomaly levels</div></div></div>
+          <div id="dashRiskBars"><div class="loading-overlay"><div class="spinner"></div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Recent Anomaly Alerts</div><div class="card-subtitle">Top risk shipments</div></div></div>
+          <div id="dashAlerts"><div class="loading-overlay"><div class="spinner"></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ ANOMALY DETECTION ═══ -->
+    <section id="page-anomaly" class="page-section">
+      <div class="page-header">
+        <h2>🔍 Anomaly Detection</h2>
+        <p>Isolation Forest + Z-Score ensemble detecting unusual shipment patterns across Indian corridors</p>
+      </div>
+      <div class="metrics-grid" id="anomalyMetrics"><div class="loading-overlay"><div class="spinner"></div></div></div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header"><div class="card-title">📊 Risk Distribution</div><button class="btn btn-secondary" onclick="loadAnomalyData()">🔄 Refresh</button></div>
+        <div id="anomalyRiskBars"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🚨 Anomaly Alerts</div></div>
+        <div id="anomalyAlerts"></div>
+      </div>
+    </section>
+
+    <!-- ═══ TRANSPORT OPTIMIZER ═══ -->
+    <section id="page-optimizer" class="page-section">
+      <div class="page-header">
+        <h2>🚚 Transport Optimizer</h2>
+        <p>ML-powered multi-modal transport comparison for Indian logistics corridors</p>
+      </div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title" style="margin-bottom:16px">📦 Shipment Details</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Distance (km)</label><input type="number" id="optDist" class="form-input" value="500"></div>
+          <div class="form-group"><label class="form-label">Weight (kg)</label><input type="number" id="optWeight" class="form-input" value="200"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Deadline (hours)</label><input type="number" id="optDeadline" class="form-input" value="48"></div>
+          <div class="form-group"><label class="form-label">Priority</label>
+            <select id="optPriority" class="form-select"><option value="balanced">⚖️ Balanced</option><option value="cost">💰 Lowest Cost</option><option value="speed">⚡ Fastest</option><option value="green">🌱 Greenest</option></select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px">
+          <button class="btn btn-secondary" onclick="setRoute(1400,500,48)">Mumbai→Delhi</button>
+          <button class="btn btn-secondary" onclick="setRoute(350,50,12)">Bangalore→Chennai</button>
+          <button class="btn btn-secondary" onclick="setRoute(1500,2000,72)">Delhi→Kolkata</button>
+          <button class="btn btn-secondary" onclick="setRoute(700,100,24)">Hyderabad→Mumbai</button>
+          <button class="btn btn-secondary" onclick="setRoute(15,5,4)">Local (15km)</button>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="runOptimizer()">🚀 Run ML Optimization</button>
+      </div>
+      <div id="optimizerResults"></div>
+    </section>
+
+    <!-- ═══ WHAT-IF SIMULATOR ═══ -->
+    <section id="page-simulator" class="page-section">
+      <div class="page-header">
+        <h2>🧪 What-If Simulator</h2>
+        <p>Simulate disruption scenarios and see how they propagate across your supply chain fleet</p>
+      </div>
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title" style="margin-bottom:16px">🎛️ Build Your Scenario</div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Disruption Type</label>
+            <select id="simType" class="form-select"><option value="weather">🌧️ Severe Weather</option><option value="highway_closure">🚧 Highway Closure</option><option value="port_congestion">🚢 Port Congestion</option><option value="strike">✊ Strike / Bandh</option></select>
+          </div>
+          <div class="form-group"><label class="form-label">Affected Region</label>
+            <select id="simRegion" class="form-select"><option value="west">🏙️ West (Mumbai, Gujarat)</option><option value="north">🏔️ North (Delhi, UP)</option><option value="south">🌴 South (Bangalore, Chennai)</option><option value="east">🌿 East (Kolkata, Odisha)</option><option value="central">🏛️ Central (MP)</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Severity (0.1 - 1.0)</label><input type="number" id="simSeverity" class="form-input" value="0.7" min="0.1" max="1" step="0.1"></div>
+          <div class="form-group"><label class="form-label">Fleet Size</label><input type="number" id="simFleet" class="form-input" value="20" min="5" max="50"></div>
+        </div>
+        <button class="btn btn-danger btn-full" onclick="runSimulation()">💥 Run Disruption Simulation</button>
+      </div>
+      <div id="simulatorResults"></div>
+    </section>
+
+    <!-- ═══ EXPLAINABILITY ═══ -->
+    <section id="page-explainability" class="page-section">
+      <div class="page-header">
+        <h2>🧠 Model Explainability</h2>
+        <p>Transparent AI — understand WHY our models predict delays using SHAP analysis</p>
+      </div>
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px">Configure Shipment</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Delivery Partner</label>
+              <select id="xaiPartner" class="form-select"><option>delhivery</option><option>shadowfax</option><option>xpressbees</option><option>dhl</option><option>bluedart</option></select></div>
+            <div class="form-group"><label class="form-label">Region</label>
+              <select id="xaiRegion" class="form-select"><option>north</option><option>south</option><option>east</option><option>west</option><option>central</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Weather</label>
+              <select id="xaiWeather" class="form-select"><option>clear</option><option>rainy</option><option>cold</option><option>foggy</option><option>stormy</option></select></div>
+            <div class="form-group"><label class="form-label">Distance (km)</label><input type="number" id="xaiDist" class="form-input" value="350"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Weight (kg)</label><input type="number" id="xaiWeight" class="form-input" value="15"></div>
+            <div class="form-group"><label class="form-label">Vehicle</label>
+              <select id="xaiVehicle" class="form-select"><option>truck</option><option>ev van</option><option>bike</option><option>three wheeler</option></select></div>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="runExplain()">🔍 Explain Prediction</button>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:16px">📊 Global Feature Importance</div>
+          <div id="globalImportance"><div class="loading-overlay"><div class="spinner"></div></div></div>
+        </div>
+      </div>
+      <div id="explainResults"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
