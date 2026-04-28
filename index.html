@@ -45,24 +45,34 @@
 
     <!-- ═══ DASHBOARD ═══ -->
     <section id="page-dashboard" class="page-section active">
-      <div class="page-header">
-        <h2>Dashboard Overview</h2>
-        <p>Real-time supply chain intelligence powered by ML models · Engine: <code style="color:var(--green);font-size:12px">logitrackai.onrender.com</code></p>
+      <div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-end;">
+        <div>
+          <h2>Dashboard Overview</h2>
+          <p>Real-time supply chain intelligence powered by ML models · Engine: <code style="color:var(--green);font-size:12px">logitrackai.onrender.com</code></p>
+        </div>
+        <button class="btn btn-primary" onclick="triggerAutoReroute()" style="display:flex;gap:8px;align-items:center;">
+          <span class="icon">🚀</span> Trigger Auto-Reroute Demo
+        </button>
       </div>
+
       <div class="metrics-grid" id="dashMetrics">
         <div class="metric-card accent"><div class="metric-icon">📈</div><div class="metric-value">90.5%</div><div class="metric-label">Model Accuracy</div><div class="metric-change up">↑ XGBoost + LightGBM</div></div>
         <div class="metric-card green"><div class="metric-icon">💰</div><div class="metric-value" id="m-penalties">...</div><div class="metric-label">Penalties Prevented</div><div class="metric-change up">↑ SLA optimization</div></div>
-        <div class="metric-card red"><div class="metric-icon">🚨</div><div class="metric-value" id="m-anomalies">...</div><div class="metric-label">Anomalies Detected</div><div class="metric-change">Fleet-wide scan</div></div>
+        <div class="metric-card red"><div class="metric-icon">🚨</div><div class="metric-value" id="m-anomalies">...</div><div class="metric-label">Disruptions Caught</div><div class="metric-change">Preemptive detection</div></div>
         <div class="metric-card blue"><div class="metric-icon">🌿</div><div class="metric-value" id="m-co2">...</div><div class="metric-label">CO₂ Saved</div><div class="metric-change up">↑ Route optimization</div></div>
       </div>
+
       <div class="grid-2">
-        <div class="card">
-          <div class="card-header"><div><div class="card-title">Risk Distribution</div><div class="card-subtitle">Current fleet anomaly levels</div></div></div>
-          <div id="dashRiskBars"><div class="loading-overlay"><div class="spinner"></div></div></div>
+        <div class="card" style="border-left: 4px solid var(--accent)">
+          <div class="card-header"><div><div class="card-title">🚨 Auto-Rerouting Activity</div><div class="card-subtitle">Autonomous adjustments executed instantly</div></div></div>
+          <div id="autoRerouteFeed">
+            <div class="loading-overlay"><div class="spinner"></div><p>Fetching latest autonomous actions...</p></div>
+          </div>
         </div>
         <div class="card">
-          <div class="card-header"><div><div class="card-title">Recent Anomaly Alerts</div><div class="card-subtitle">Top risk shipments</div></div></div>
-          <div id="dashAlerts"><div class="loading-overlay"><div class="spinner"></div></div></div>
+          <div class="card-header"><div><div class="card-title">📊 Fleet Anomaly Status</div><div class="card-subtitle">Continuous monitoring (Isolation Forest)</div></div></div>
+          <div id="dashRiskBars"><div class="loading-overlay"><div class="spinner"></div></div></div>
+          <div style="margin-top:20px" id="dashAlerts"></div>
         </div>
       </div>
     </section>

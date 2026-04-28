@@ -99,7 +99,7 @@ async function loadLiveMap() {
   metricsEl.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p>Loading fleet data...</p></div>';
 
   try {
-    const data = await mlPost('/ml/anomaly-detect-batch', { fleet_size: 30 });
+    const data = await mlGet('/ml/fleet-scan');
     const fleet = data.fleet || [];
     const results = data.results || [];
     const summary = data.summary || {};
@@ -214,28 +214,81 @@ function alertRowHtml(a, fleet) {
 // ═══════ Dashboard ═══════
 async function loadDashboard() {
   try {
-    const [anomalyData, optData] = await Promise.all([
-      mlPost('/ml/anomaly-detect-batch', { fleet_size: 25 }),
-      mlPost('/ml/optimize-transport', { distance_km: 500, weight_kg: 200, deadline_hours: 48 }),
+    const [metrics, fleetScan] = await Promise.all([
+      mlGet('/ml/impact-metrics'),
+      mlGet('/ml/fleet-scan')
     ]);
-    const s = anomalyData.summary || {};
-    const savings = optData.savings || {};
-    document.getElementById('m-anomalies').textContent = s.anomalies_detected || 0;
-    document.getElementById('m-penalties').textContent = `₹${((s.anomalies_detected || 0) * 5).toFixed(0)}K`;
-    document.getElementById('m-co2').textContent = `${savings.co2_saving_kg || 0} kg`;
 
-    const dist = anomalyData.risk_distribution || {};
-    const total = (anomalyData.results || []).length;
+    // Update Impact Metrics Panel
+    document.getElementById('m-anomalies').textContent = metrics.disruptions_caught || 0;
+    document.getElementById('m-penalties').textContent = `₹${(metrics.penalties_prevented_inr/1000).toFixed(0)}K`;
+    document.getElementById('m-co2').textContent = `${metrics.co2_saved_kg || 0} kg`;
+
+    // Update Fleet Anomaly Status
+    const dist = fleetScan.risk_distribution || {};
+    const total = (fleetScan.results || []).length;
     document.getElementById('dashRiskBars').innerHTML = riskBarsHtml(dist, total);
 
-    const anomalies = (anomalyData.results || []).filter(r => r.is_anomaly).sort((a, b) => b.anomaly_score - a.anomaly_score).slice(0, 5);
+    const anomalies = (fleetScan.results || []).filter(r => r.is_anomaly).sort((a, b) => b.anomaly_score - a.anomaly_score).slice(0, 5);
     document.getElementById('dashAlerts').innerHTML = anomalies.length
-      ? anomalies.map(a => alertRowHtml(a, anomalyData.fleet || [])).join('')
-      : '<div class="empty-state"><div class="empty-icon">✅</div><p>No anomalies detected!</p></div>';
+      ? anomalies.map(a => alertRowHtml(a, fleetScan.fleet || [])).join('')
+      : '<div class="empty-state"><div class="empty-icon">✅</div><p>No anomalies detected in the fleet.</p></div>';
+      
+    // Initial empty state for reroute feed
+    document.getElementById('autoRerouteFeed').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⏳</div>
+        <p>Awaiting autonomous action trigger...</p>
+      </div>`;
   } catch (e) {
     document.getElementById('dashAlerts').innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>ML Engine warming up... Please wait 30s and refresh.<br><small style="color:var(--text-muted)">${e.message}</small></p></div>`;
   }
 }
+
+async function triggerAutoReroute() {
+  const feed = document.getElementById('autoRerouteFeed');
+  feed.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p>Executing autonomous reroute protocol...</p></div>';
+  
+  try {
+    const data = await mlGet('/ml/auto-reroute');
+    const rerouted = data.rerouted_shipments || [];
+    
+    if (rerouted.length === 0) {
+      feed.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Fleet healthy. No critical reroutes needed.</p></div>';
+      return;
+    }
+    
+    let html = `<div style="margin-bottom:15px; font-weight:600; color:var(--green)">✅ Successfully optimized ${rerouted.length} critical shipments.</div>`;
+    html += `<div style="display:flex; gap:10px; margin-bottom:15px">
+               <span class="badge blue">Saves ₹${data.impact.total_cost_saved_inr.toLocaleString()}</span>
+               <span class="badge green">Saves ${data.impact.total_time_saved_hrs} hours</span>
+             </div>`;
+             
+    html += rerouted.map(r => `
+      <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; background: var(--bg-glass);">
+        <div style="display:flex; justify-content:space-between; margin-bottom: 8px;">
+          <strong style="color:var(--text)">${r.shipment_id}</strong>
+          <span class="badge ${r.risk_level.toLowerCase()}">${r.risk_level} Risk</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom: 8px;">
+          📍 ${r.origin} → ${r.destination}
+        </div>
+        <div style="font-size:12px; padding: 6px; background: rgba(255,100,100,0.1); border-radius: 4px; margin-bottom: 8px; border-left: 2px solid var(--red);">
+          <strong>Before:</strong> ${r.original_mode.toUpperCase()} (High Delay Probability)
+        </div>
+        <div style="font-size:12px; padding: 6px; background: rgba(100,255,100,0.1); border-radius: 4px; border-left: 2px solid var(--green);">
+          <strong>After:</strong> Auto-switched to ${r.recommended_mode.toUpperCase()}<br>
+          <span style="color:var(--text-secondary)">Cost: ₹${r.recommended_cost.toLocaleString()} · Time: ${r.recommended_time}h</span>
+        </div>
+      </div>
+    `).join('');
+    
+    feed.innerHTML = html;
+  } catch (e) {
+    feed.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>Failed to execute reroute: ${e.message}</p></div>`;
+  }
+}
+
 
 // ═══════ Anomaly Detection ═══════
 async function loadAnomalyData() {
@@ -243,7 +296,7 @@ async function loadAnomalyData() {
   const ae = document.getElementById('anomalyAlerts');
   me.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p>Scanning fleet...</p></div>';
   try {
-    const data = await mlPost('/ml/anomaly-detect-batch', { fleet_size: 25 });
+    const data = await mlGet('/ml/fleet-scan');
     const s = data.summary || {};
     me.innerHTML = `
       <div class="metric-card accent"><div class="metric-icon">📦</div><div class="metric-value">${s.total_shipments||0}</div><div class="metric-label">Total Shipments</div></div>
