@@ -94,11 +94,16 @@ function getShipmentPosition(ship) {
       lng: originCity.lng + (destCity.lng - originCity.lng) * t - jitter,
     };
   }
-  // Fallback: place near a region city
+  // Fallback: place near a region city with jitter
   const region = (ship.region || 'central').toLowerCase();
   const cities = REGION_CITIES[region] || REGION_CITIES.central;
   const city = CITIES[cities[0]];
-  return { lat: city.lat + 0.3, lng: city.lng + 0.3 };
+  let fHash = 0;
+  const fId = ship.shipment_id || '';
+  for (let i = 0; i < fId.length; i++) fHash = ((fHash << 5) - fHash) + fId.charCodeAt(i);
+  const j1 = (Math.abs(fHash % 100) - 50) / 25; // larger jitter
+  const j2 = (Math.abs((fHash*7) % 100) - 50) / 25;
+  return { lat: city.lat + j1, lng: city.lng + j2 };
 }
 
 function riskColor(level) {
@@ -554,6 +559,10 @@ async function sendChat() {
     const data = await mlPost('/ml/chat', { message: q });
     const msgs = document.getElementById('chatMessages');
     msgs.removeChild(msgs.lastChild);
+
+    if (data.response && data.response.includes('(Debug:')) {
+      throw new Error('Gemini Quota Exceeded');
+    }
 
     let html = '';
     if (data.tool_used) {
