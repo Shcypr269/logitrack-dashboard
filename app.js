@@ -76,11 +76,29 @@ const REGION_CITIES = {
 };
 
 function getShipmentPosition(ship) {
+  // Place shipment deterministically between its origin and destination city
+  const originKey = (ship.origin || '').toLowerCase();
+  const destKey = (ship.destination || '').toLowerCase();
+  const originCity = CITIES[originKey];
+  const destCity = CITIES[destKey];
+
+  if (originCity && destCity) {
+    // Use shipment_id hash to get a stable position along the corridor
+    let hash = 0;
+    const id = ship.shipment_id || '';
+    for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    const t = 0.2 + (Math.abs(hash % 60) / 100); // 0.20 to 0.80 along corridor
+    const jitter = (Math.abs(hash % 100) - 50) / 200; // small perpendicular offset
+    return {
+      lat: originCity.lat + (destCity.lat - originCity.lat) * t + jitter,
+      lng: originCity.lng + (destCity.lng - originCity.lng) * t - jitter,
+    };
+  }
+  // Fallback: place near a region city
   const region = (ship.region || 'central').toLowerCase();
   const cities = REGION_CITIES[region] || REGION_CITIES.central;
-  const city = CITIES[cities[Math.floor(Math.random() * cities.length)]];
-  // Add random offset to simulate fleet spread
-  return { lat: city.lat + (Math.random() - 0.5) * 2, lng: city.lng + (Math.random() - 0.5) * 2 };
+  const city = CITIES[cities[0]];
+  return { lat: city.lat + 0.3, lng: city.lng + 0.3 };
 }
 
 function riskColor(level) {
@@ -434,95 +452,7 @@ async function runExplain() {
           <span style="font-size:11px;color:${f.direction==='increases_risk'?'var(--red)':'var(--green)'}">${f.direction==='increases_risk'?'↑ risk':'↓ risk'}</span></div>`).join('')}</div>`;
   } catch (e) { el.innerHTML = `<div class="card"><div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div></div>`; }
 }
-// ═══════ Ask LogiTrack AI (Chat) ═══════
-const CITY_REGIONS = {
-  mumbai:'west',delhi:'north',bangalore:'south',chennai:'south',kolkata:'east',
-  hyderabad:'south',pune:'west',ahmedabad:'west',jaipur:'north',lucknow:'north',bhopal:'central',patna:'east'
-};
-
-function parseChat(q) {
-  q = q.toLowerCase();
-  const distM = q.match(/(\d+)\s*km/); const dist = distM ? +distM[1] : null;
-  const wtM = q.match(/(\d+)\s*kg/); const wt = wtM ? +wtM[1] : null;
-  const sevM = q.match(/(\d+)\s*%/); const sev = sevM ? +sevM[1]/100 : null;
-  let region = null;
-  for (const [c, r] of Object.entries(CITY_REGIONS)) { if (q.includes(c)) { region = r; break; } }
-  for (const r of ['north','south','east','west','central']) { if (q.includes(r)) { region = r; break; } }
-  let weather = 'clear';
-  for (const w of ['stormy','rainy','foggy','cold','storm','rain','fog']) { if (q.includes(w)) { weather = w.replace('rain','rainy').replace('storm','stormy').replace('fog','foggy'); break; } }
-
-  if (/delay risk|predict delay|will it be delayed|delay chance|risk of delay/.test(q)) {
-    if (q.includes('mumbai') && q.includes('delhi') && !dist) return ['predict-delay', {delivery_partner:'delhivery',package_type:'electronics',vehicle_type:'truck',delivery_mode:q.includes('express')?'express':'standard',region:region||'north',weather_condition:weather,distance_km:1400,package_weight_kg:q.includes('heavy')?500:(wt||10)}];
-    return ['predict-delay', {delivery_partner:'delhivery',package_type:'electronics',vehicle_type:'truck',delivery_mode:'standard',region:region||'north',weather_condition:weather,distance_km:dist||500,package_weight_kg:wt||10}];
-  }
-  if (/\beta\b|how long|delivery time|estimated time/.test(q)) {
-    let city = 'Unknown'; for (const c of Object.keys(CITY_REGIONS)) { if (q.includes(c)) { city = capitalize(c); break; } }
-    return ['predict-eta', {distance_km:dist||50,hour:14,city,day_of_week:3}];
-  }
-  if (/transport mode|cheapest|greenest|optimize|best mode|compare/.test(q)) {
-    let priority = 'balanced';
-    if (/green|eco/.test(q)) priority='green'; else if (/cheap|cost|budget/.test(q)) priority='cost'; else if (/fast|speed|urgent/.test(q)) priority='speed';
-    return ['optimize-transport', {distance_km:dist||1200,weight_kg:wt||300,deadline_hours:48,priority}];
-  }
-  if (/what if|what happens|disruption|simulate|scenario|strike|flood|bandh/.test(q)) {
-    let dtype = 'weather';
-    if (/port/.test(q)) dtype='port_congestion'; else if (/highway|closure/.test(q)) dtype='highway_closure'; else if (/strike|bandh/.test(q)) dtype='strike';
-    return ['whatif', {disruption_type:dtype,affected_region:region||'north',severity:sev||0.7,fleet_size:20,inject_region:true}];
-  }
-  if (/explain|why|reason|factors|shap|understand/.test(q)) {
-    return ['explain-delay', {delivery_partner:'delhivery',package_type:'electronics',vehicle_type:'truck',delivery_mode:'standard',region:region||'north',weather_condition:weather,distance_km:dist||1400,package_weight_kg:wt||25}];
-  }
-  if (/anomal|outlier|suspicious|scan|fleet scan|fleet health/.test(q)) {
-    return ['anomaly-detect-batch', {fleet_size:25}];
-  }
-  return [null, null];
-}
-
-function formatChat(ep, r) {
-  if (ep === 'predict-delay') {
-    const p = r.delay_probability || r.probability || 0;
-    const risk = r.risk_level || 'UNKNOWN';
-    const icon = p > 0.6 ? '🔴' : p > 0.3 ? '🟡' : '🟢';
-    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">${icon} ${risk} Risk — ${Math.round(p*100)}% delay probability</div>
-      <div style="font-size:13px;color:var(--text-secondary)">${p>0.5?'⚠️ High chance of delay. Consider rerouting or switching to express.':'✅ Shipment looks on track with acceptable risk.'}</div>`;
-  }
-  if (ep === 'predict-eta') {
-    const eta = r.estimated_time_mins || 0;
-    return `<div style="font-weight:700;font-size:16px">⏱️ ETA: ${eta.toFixed(0)} minutes (${(eta/60).toFixed(1)} hours)</div>`;
-  }
-  if (ep === 'optimize-transport') {
-    const rec = r.recommended || {};
-    const sav = r.savings || {};
-    const alts = r.alternatives || [];
-    let html = `<div style="font-weight:700;font-size:16px;color:var(--green);margin-bottom:8px">✅ Best: ${rec.mode} — ₹${rec.total_cost_inr?.toLocaleString()} · ${rec.travel_time_hrs}h · ${rec.co2_emissions_kg}kg CO₂</div>`;
-    html += `<div style="font-size:13px;margin-bottom:12px">💰 Saves ₹${sav.cost_saving_inr||0} · 🌿 Saves ${sav.co2_saving_kg||0}kg CO₂</div>`;
-    html += '<table class="data-table"><thead><tr><th>Mode</th><th>Cost</th><th>Time</th><th>CO₂</th></tr></thead><tbody>';
-    alts.slice(0,5).forEach(a => { html += `<tr><td>${a.mode}</td><td>₹${a.total_cost_inr?.toLocaleString()}</td><td>${a.travel_time_hrs}h</td><td>${a.co2_emissions_kg}kg</td></tr>`; });
-    return html + '</tbody></table>';
-  }
-  if (ep === 'whatif') {
-    const imp = r.impact_summary || {};
-    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">💥 Disruption Simulation</div>
-      <div style="font-size:13px"><b>${imp.newly_at_risk||0}</b> shipments newly at risk · Est. penalty: <b>₹${(imp.estimated_penalty_inr||0).toLocaleString()}</b> · Avg risk increase: <b>${Math.round((imp.avg_delay_prob_increase||0)*100)}%</b></div>`;
-  }
-  if (ep === 'explain-delay') {
-    const p = r.probability || 0;
-    const icon = p > 0.6 ? '🔴' : p > 0.3 ? '🟡' : '🟢';
-    let html = `<div style="font-weight:700;font-size:16px;margin-bottom:8px">${icon} ${r.prediction||'?'} — ${Math.round(p*100)}% probability</div>`;
-    if (r.explanation) html += `<div style="font-size:13px;margin-bottom:10px">💡 ${r.explanation}</div>`;
-    (r.top_factors||[]).slice(0,5).forEach(f => {
-      const c = f.direction==='increases_risk'?'var(--red)':'var(--green)';
-      html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px"><span style="min-width:100px">${f.feature}</span><div class="progress-bar" style="flex:1;height:6px"><div class="fill" style="width:${Math.min(f.importance,100)}%;background:${c}"></div></div><span style="color:${c}">${f.importance}%</span></div>`;
-    });
-    return html;
-  }
-  if (ep === 'anomaly-detect-batch') {
-    const s = r.summary || {};
-    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">🔍 Fleet Scan: ${s.total_shipments||0} shipments</div>
-      <div style="font-size:13px">${s.anomalies_detected||0} anomalies found (${Math.round((s.anomaly_rate||0)*100)}% rate) · ${s.critical_alerts||0} critical · ${s.high_alerts||0} high</div>`;
-  }
-  return `<pre style="font-size:11px;overflow-x:auto">${JSON.stringify(r, null, 2)}</pre>`;
-}
+// ═══════ Ask LogiTrack AI (Gemini Chat) ═══════
 
 function addChatMsg(role, html) {
   const el = document.getElementById('chatMessages');
@@ -530,7 +460,8 @@ function addChatMsg(role, html) {
   if (empty) empty.style.display = 'none';
   const bg = role === 'user' ? 'linear-gradient(135deg,var(--accent),#a29bfe)' : 'var(--bg-glass)';
   const align = role === 'user' ? 'margin-left:20%' : 'margin-right:20%';
-  el.innerHTML += `<div style="padding:12px 16px;border-radius:12px;margin-bottom:8px;background:${bg};border:1px solid var(--border);${align};font-size:13px">${html}</div>`;
+  const label = role === 'user' ? '' : '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-bottom:6px">LOGITRACK AI (Gemini + ML)</div>';
+  el.innerHTML += `<div style="padding:12px 16px;border-radius:12px;margin-bottom:8px;background:${bg};border:1px solid var(--border);${align};font-size:13px">${label}${html}</div>`;
   el.scrollTop = el.scrollHeight;
 }
 
@@ -541,17 +472,31 @@ async function sendChat() {
   input.value = '';
   addChatMsg('user', q);
 
-  const [ep, payload] = parseChat(q);
-  if (!ep) {
-    addChatMsg('ai', '🤔 I didn\'t understand that. Try asking about <b>delay risk</b>, <b>transport modes</b>, <b>disruptions</b>, <b>anomalies</b>, <b>ETA</b>, or <b>explainability</b>.');
-    return;
-  }
-  addChatMsg('ai', '<div class="spinner"></div> Querying ML engine...');
+  // Show loading
+  addChatMsg('ai', '<div class="spinner"></div> Gemini is analyzing your question and querying ML models...');
+
   try {
-    const data = await mlPost(`/ml/${ep}`, payload);
+    const data = await mlPost('/ml/chat', { message: q });
     const msgs = document.getElementById('chatMessages');
     msgs.removeChild(msgs.lastChild); // Remove spinner
-    addChatMsg('ai', formatChat(ep, data));
+
+    let html = '';
+
+    // Tool badge
+    if (data.tool_used) {
+      html += `<div style="margin-bottom:8px"><span style="background:rgba(102,126,234,0.15);color:var(--accent);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600">ML Model: ${data.tool_used}</span></div>`;
+    }
+
+    // Gemini response (rendered as-is, it may contain markdown-like text)
+    const response = (data.response || 'No response received.').replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html += `<div style="line-height:1.7">${response}</div>`;
+
+    // Show extracted params if available
+    if (data.params_extracted && Object.keys(data.params_extracted).length > 0) {
+      html += `<details style="margin-top:10px;font-size:11px;color:var(--text-secondary)"><summary style="cursor:pointer">View extracted parameters</summary><pre style="margin-top:6px;overflow-x:auto">${JSON.stringify(data.params_extracted, null, 2)}</pre></details>`;
+    }
+
+    addChatMsg('ai', html);
   } catch (e) {
     const msgs = document.getElementById('chatMessages');
     msgs.removeChild(msgs.lastChild);
@@ -564,3 +509,4 @@ function clearChat() { const el = document.getElementById('chatMessages'); el.in
 
 // ═══════ Init ═══════
 loadDashboard();
+
