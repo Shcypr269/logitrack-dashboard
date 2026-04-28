@@ -30,6 +30,7 @@
       <a data-page="livemap" onclick="navigate('livemap')"><span class="icon">🗺️</span> Live Map</a>
       <div class="divider"></div>
       <a data-page="explainability" onclick="navigate('explainability')"><span class="icon">🧠</span> Explainability</a>
+      <a data-page="chat" onclick="navigate('chat')"><span class="icon">🤖</span> Ask LogiTrack AI</a>
     </div>
     <div class="sidebar-footer">
       <div class="user-info">
@@ -186,6 +187,30 @@
       <div class="card">
         <div class="card-header"><div class="card-title">📋 Fleet Summary</div><button class="btn btn-secondary" onclick="loadLiveMap()">🔄 Refresh</button></div>
         <div id="mapFleetTable"></div>
+      </div>
+    </section>
+
+    <!-- ═══ ASK LOGITRACK AI ═══ -->
+    <section id="page-chat" class="page-section">
+      <div class="page-header">
+        <h2>🤖 Ask LogiTrack AI</h2>
+        <p>Chat with our ML engine — ask about delays, anomalies, transport costs, disruptions, and more</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+        <button class="btn btn-secondary" onclick="askExample('What is the delay risk for a 500kg shipment from Mumbai to Delhi in stormy weather?')">Delay risk?</button>
+        <button class="btn btn-secondary" onclick="askExample('Which transport mode is cheapest for 1200km, 300kg?')">Cheapest mode?</button>
+        <button class="btn btn-secondary" onclick="askExample('What happens if a weather disruption hits north India at 80% severity?')">What-if storm?</button>
+        <button class="btn btn-secondary" onclick="askExample('Scan the fleet for anomalies')">Fleet scan</button>
+        <button class="btn btn-secondary" onclick="askExample('Explain why a rainy express shipment from east India gets delayed')">Explain delay</button>
+        <button class="btn btn-secondary" onclick="askExample('Predict ETA for a 350km delivery in Bangalore at 3 PM')">Predict ETA</button>
+      </div>
+      <div class="card" id="chatMessages" style="min-height:300px;max-height:500px;overflow-y:auto;margin-bottom:16px">
+        <div class="empty-state" id="chatEmpty"><div class="empty-icon">💬</div><p>Ask me anything about your supply chain!</p></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="chatInput" class="form-input" placeholder="e.g. What's the delay risk for a heavy shipment from Mumbai?" onkeydown="if(event.key==='Enter')sendChat()" style="flex:1">
+        <button class="btn btn-primary" onclick="sendChat()">🚀 Ask</button>
+        <button class="btn btn-secondary" onclick="clearChat()">🗑️</button>
       </div>
     </section>
 
