@@ -245,6 +245,8 @@ body {
 .badge.medium { background: rgba(253, 203, 110, 0.2); color: var(--yellow); }
 .badge.low { background: rgba(0, 184, 148, 0.2); color: var(--green); }
 .badge.normal { background: rgba(0, 184, 148, 0.2); color: var(--green); }
+.badge.blue { background: rgba(9, 132, 227, 0.2); color: var(--blue); }
+.badge.green { background: rgba(0, 184, 148, 0.2); color: var(--green); }
 
 /* ═══════ Buttons ═══════ */
 .btn {

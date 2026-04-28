@@ -252,12 +252,8 @@ async function loadDashboard() {
       ? anomalies.map(a => alertRowHtml(a, fleetScan.fleet || [])).join('')
       : '<div class="empty-state"><div class="empty-icon">✅</div><p>No anomalies detected in the fleet.</p></div>';
       
-    // Initial empty state for reroute feed
-    document.getElementById('autoRerouteFeed').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">⏳</div>
-        <p>Awaiting autonomous action trigger...</p>
-      </div>`;
+    // Auto-trigger reroute on dashboard load
+    triggerAutoReroute();
   } catch (e) {
     document.getElementById('dashAlerts').innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>ML Engine warming up... Please wait 30s and refresh.<br><small style="color:var(--text-muted)">${e.message}</small></p></div>`;
   }
@@ -454,6 +450,86 @@ async function runExplain() {
 }
 // ═══════ Ask LogiTrack AI (Gemini Chat) ═══════
 
+const CHAT_REGIONS = {
+  mumbai:'west',delhi:'north',bangalore:'south',chennai:'south',kolkata:'east',
+  hyderabad:'south',pune:'west',ahmedabad:'west',jaipur:'north',lucknow:'north',bhopal:'central',patna:'east'
+};
+
+function localParseChat(q) {
+  q = q.toLowerCase();
+  const distM = q.match(/(\d+)\s*km/); const dist = distM ? +distM[1] : null;
+  const wtM = q.match(/(\d+)\s*kg/); const wt = wtM ? +wtM[1] : null;
+  const sevM = q.match(/(\d+)\s*%/); const sev = sevM ? +sevM[1]/100 : null;
+  let region = null;
+  for (const [c, r] of Object.entries(CHAT_REGIONS)) { if (q.includes(c)) { region = r; break; } }
+  for (const r of ['north','south','east','west','central']) { if (q.includes(r)) { region = r; break; } }
+  let weather = 'clear';
+  for (const w of ['stormy','rainy','foggy','cold','storm','rain','fog']) { if (q.includes(w)) { weather = w.replace('rain','rainy').replace('storm','stormy').replace('fog','foggy'); break; } }
+
+  if (/delay|risk|predict|will it be late/.test(q))
+    return ['predict-delay', {delivery_partner:'delhivery',package_type:'electronics',vehicle_type:'truck',delivery_mode:'standard',region:region||'north',weather_condition:weather,distance_km:dist||500,package_weight_kg:wt||10}];
+  if (/eta|how long|delivery time|estimated time/.test(q))
+    return ['predict-eta', {distance_km:dist||50,hour:14,city:'Unknown',day_of_week:3}];
+  if (/transport|cheapest|greenest|optimize|best mode|compare/.test(q)) {
+    let priority = 'balanced';
+    if (/green|eco/.test(q)) priority='green'; else if (/cheap|cost/.test(q)) priority='cost'; else if (/fast|speed/.test(q)) priority='speed';
+    return ['optimize-transport', {distance_km:dist||1200,weight_kg:wt||300,deadline_hours:48,priority}];
+  }
+  if (/what if|what happens|disruption|simulate|strike|flood/.test(q)) {
+    let dtype = 'weather';
+    if (/port/.test(q)) dtype='port_congestion'; else if (/highway/.test(q)) dtype='highway_closure'; else if (/strike/.test(q)) dtype='strike';
+    return ['whatif', {disruption_type:dtype,affected_region:region||'north',severity:sev||0.7,fleet_size:20,inject_region:true}];
+  }
+  if (/explain|why|reason|factor|shap/.test(q))
+    return ['explain-delay', {delivery_partner:'delhivery',package_type:'electronics',vehicle_type:'truck',delivery_mode:'standard',region:region||'north',weather_condition:weather,distance_km:dist||1400,package_weight_kg:wt||25}];
+  if (/anomal|scan|fleet|health|outlier/.test(q))
+    return ['fleet-scan', null];
+  if (/reroute|auto|fix|optimize fleet/.test(q))
+    return ['auto-reroute', null];
+  return [null, null];
+}
+
+function formatLocalChat(ep, r) {
+  if (ep === 'predict-delay') {
+    const p = r.delay_probability || r.probability || 0;
+    const risk = r.risk_level || 'UNKNOWN';
+    const icon = p > 0.6 ? '🔴' : p > 0.3 ? '🟡' : '🟢';
+    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">${icon} ${risk} Risk — ${Math.round(p*100)}% delay probability</div>
+      <div style="font-size:13px;color:var(--text-secondary)">${p>0.5?'⚠️ High chance of delay. Consider rerouting or switching to express.':'✅ Shipment looks on track.'}</div>`;
+  }
+  if (ep === 'predict-eta') {
+    const eta = r.estimated_time_mins || 0;
+    return `<div style="font-weight:700;font-size:16px">⏱️ ETA: ${Math.round(eta)} minutes (${(eta/60).toFixed(1)} hours)</div>`;
+  }
+  if (ep === 'optimize-transport') {
+    const rec = r.recommended || {};
+    const sav = r.savings || {};
+    return `<div style="font-weight:700;font-size:16px;color:var(--green);margin-bottom:8px">✅ Best: ${rec.mode} — ₹${rec.total_cost_inr?.toLocaleString()} · ${rec.travel_time_hrs}h · ${rec.co2_emissions_kg}kg CO₂</div>
+      <div style="font-size:13px">💰 Saves ₹${sav.cost_saving_inr||0} · 🌿 Saves ${sav.co2_saving_kg||0}kg CO₂</div>`;
+  }
+  if (ep === 'whatif') {
+    const imp = r.impact_summary || {};
+    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">💥 Disruption Impact</div>
+      <div style="font-size:13px"><b>${imp.newly_at_risk||0}</b> shipments newly at risk · Penalty: <b>₹${(imp.estimated_penalty_inr||0).toLocaleString()}</b></div>`;
+  }
+  if (ep === 'explain-delay') {
+    const p = r.probability || 0;
+    let html = `<div style="font-weight:700;font-size:16px;margin-bottom:8px">${p>0.5?'🔴':'🟢'} ${r.prediction||'?'} — ${Math.round(p*100)}%</div>`;
+    if (r.explanation) html += `<div style="font-size:13px;margin-bottom:10px">💡 ${r.explanation}</div>`;
+    return html;
+  }
+  if (ep === 'fleet-scan') {
+    const s = r.summary || {};
+    return `<div style="font-weight:700;font-size:16px;margin-bottom:8px">🔍 Fleet Scan: ${s.total_shipments||0} shipments</div>
+      <div style="font-size:13px">${s.anomalies_detected||0} anomalies · ${s.critical_alerts||0} critical · ${s.high_alerts||0} high</div>`;
+  }
+  if (ep === 'auto-reroute') {
+    const rr = r.rerouted_shipments || [];
+    return `<div style="font-weight:700;font-size:16px;color:var(--green);margin-bottom:8px">✅ Auto-rerouted ${rr.length} shipments</div>`;
+  }
+  return `<pre style="font-size:11px;overflow-x:auto">${JSON.stringify(r, null, 2).slice(0,500)}</pre>`;
+}
+
 function addChatMsg(role, html) {
   const el = document.getElementById('chatMessages');
   const empty = document.getElementById('chatEmpty');
@@ -471,36 +547,44 @@ async function sendChat() {
   if (!q) return;
   input.value = '';
   addChatMsg('user', q);
+  addChatMsg('ai', '<div class="spinner"></div> Analyzing with Gemini + ML engine...');
 
-  // Show loading
-  addChatMsg('ai', '<div class="spinner"></div> Gemini is analyzing your question and querying ML models...');
-
+  // Try Gemini-powered /chat first, fall back to local parser
   try {
     const data = await mlPost('/ml/chat', { message: q });
     const msgs = document.getElementById('chatMessages');
-    msgs.removeChild(msgs.lastChild); // Remove spinner
+    msgs.removeChild(msgs.lastChild);
 
     let html = '';
-
-    // Tool badge
     if (data.tool_used) {
-      html += `<div style="margin-bottom:8px"><span style="background:rgba(102,126,234,0.15);color:var(--accent);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600">ML Model: ${data.tool_used}</span></div>`;
+      html += `<div style="margin-bottom:8px"><span style="background:rgba(102,126,234,0.15);color:var(--accent);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600">🔧 ${data.tool_used}</span></div>`;
     }
-
-    // Gemini response (rendered as-is, it may contain markdown-like text)
     const response = (data.response || 'No response received.').replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     html += `<div style="line-height:1.7">${response}</div>`;
-
-    // Show extracted params if available
     if (data.params_extracted && Object.keys(data.params_extracted).length > 0) {
       html += `<details style="margin-top:10px;font-size:11px;color:var(--text-secondary)"><summary style="cursor:pointer">View extracted parameters</summary><pre style="margin-top:6px;overflow-x:auto">${JSON.stringify(data.params_extracted, null, 2)}</pre></details>`;
     }
-
     addChatMsg('ai', html);
-  } catch (e) {
-    const msgs = document.getElementById('chatMessages');
-    msgs.removeChild(msgs.lastChild);
-    addChatMsg('ai', `❌ ${e.message}. ML engine may be warming up — try again in 30s.`);
+  } catch (geminiErr) {
+    // Fallback: local parser + direct ML call
+    const [ep, payload] = localParseChat(q);
+    if (!ep) {
+      const msgs = document.getElementById('chatMessages');
+      msgs.removeChild(msgs.lastChild);
+      addChatMsg('ai', '🤔 I didn\'t understand that. Try asking about <b>delay risk</b>, <b>transport modes</b>, <b>disruptions</b>, <b>anomalies</b>, <b>ETA</b>, or <b>explainability</b>.');
+      return;
+    }
+    try {
+      const isGet = ['fleet-scan','auto-reroute'].includes(ep);
+      const data = isGet ? await mlGet(`/ml/${ep}`) : await mlPost(`/ml/${ep}`, payload);
+      const msgs = document.getElementById('chatMessages');
+      msgs.removeChild(msgs.lastChild);
+      addChatMsg('ai', formatLocalChat(ep, data));
+    } catch (e2) {
+      const msgs = document.getElementById('chatMessages');
+      msgs.removeChild(msgs.lastChild);
+      addChatMsg('ai', `❌ ML engine error: ${e2.message}. It may be warming up — try again in 30s.`);
+    }
   }
 }
 
