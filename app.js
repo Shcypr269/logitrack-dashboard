@@ -23,7 +23,7 @@ function navigate(page) {
   document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
   document.getElementById(`page-${page}`).classList.add('active');
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
-  const loaders = { dashboard: loadDashboard, anomaly: loadAnomalyData, explainability: loadGlobalImportance };
+  const loaders = { dashboard: loadDashboard, anomaly: loadAnomalyData, explainability: loadGlobalImportance, livemap: loadLiveMap };
   if (loaders[page]) loaders[page]();
 }
 
@@ -40,6 +40,162 @@ function riskBarsHtml(dist, total) {
       <div class="progress-bar" style="flex:1"><div class="fill" style="width:${pct}%;background:${c}"></div></div>
       <span style="min-width:30px;font-size:12px;color:var(--text-secondary)">${count}</span></div>`;
   }).join('');
+}
+
+// ═══════ Indian Cities & Corridors ═══════
+const CITIES = {
+  mumbai: { lat: 19.076, lng: 72.877, name: 'Mumbai' },
+  delhi: { lat: 28.613, lng: 77.209, name: 'Delhi' },
+  bangalore: { lat: 12.971, lng: 77.594, name: 'Bangalore' },
+  chennai: { lat: 13.082, lng: 80.270, name: 'Chennai' },
+  kolkata: { lat: 22.572, lng: 88.363, name: 'Kolkata' },
+  hyderabad: { lat: 17.385, lng: 78.486, name: 'Hyderabad' },
+  ahmedabad: { lat: 23.022, lng: 72.571, name: 'Ahmedabad' },
+  pune: { lat: 18.520, lng: 73.856, name: 'Pune' },
+  jaipur: { lat: 26.912, lng: 75.787, name: 'Jaipur' },
+  lucknow: { lat: 26.846, lng: 80.946, name: 'Lucknow' },
+  bhopal: { lat: 23.259, lng: 77.412, name: 'Bhopal' },
+  patna: { lat: 25.611, lng: 85.144, name: 'Patna' },
+};
+
+const CORRIDORS = [
+  ['mumbai', 'delhi', '#6c5ce7'], ['bangalore', 'chennai', '#00b894'],
+  ['delhi', 'kolkata', '#0984e3'], ['mumbai', 'bangalore', '#e94560'],
+  ['hyderabad', 'mumbai', '#f39c12'], ['delhi', 'jaipur', '#a29bfe'],
+  ['kolkata', 'patna', '#fdcb6e'], ['mumbai', 'ahmedabad', '#55efc4'],
+  ['delhi', 'lucknow', '#74b9ff'], ['hyderabad', 'chennai', '#fab1a0'],
+  ['bhopal', 'mumbai', '#ff7675'], ['pune', 'bangalore', '#81ecec'],
+];
+
+const REGION_CITIES = {
+  north: ['delhi', 'jaipur', 'lucknow'],
+  south: ['bangalore', 'chennai', 'hyderabad'],
+  east: ['kolkata', 'patna'],
+  west: ['mumbai', 'ahmedabad', 'pune'],
+  central: ['bhopal'],
+};
+
+function getShipmentPosition(ship) {
+  const region = (ship.region || 'central').toLowerCase();
+  const cities = REGION_CITIES[region] || REGION_CITIES.central;
+  const city = CITIES[cities[Math.floor(Math.random() * cities.length)]];
+  // Add random offset to simulate fleet spread
+  return { lat: city.lat + (Math.random() - 0.5) * 2, lng: city.lng + (Math.random() - 0.5) * 2 };
+}
+
+function riskColor(level) {
+  const l = (level || 'low').toUpperCase();
+  if (l === 'CRITICAL') return '#e94560';
+  if (l === 'HIGH') return '#f39c12';
+  if (l === 'MEDIUM') return '#fdcb6e';
+  return '#00b894';
+}
+
+let fleetMap = null;
+
+async function loadLiveMap() {
+  const metricsEl = document.getElementById('mapMetrics');
+  const tableEl = document.getElementById('mapFleetTable');
+  metricsEl.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p>Loading fleet data...</p></div>';
+
+  try {
+    const data = await mlPost('/ml/anomaly-detect-batch', { fleet_size: 30 });
+    const fleet = data.fleet || [];
+    const results = data.results || [];
+    const summary = data.summary || {};
+
+    // Build result lookup
+    const rMap = {};
+    results.forEach(r => { rMap[r.shipment_id] = r; });
+
+    // Metrics
+    metricsEl.innerHTML = `
+      <div class="metric-card accent"><div class="metric-icon">📦</div><div class="metric-value">${fleet.length}</div><div class="metric-label">Active Shipments</div></div>
+      <div class="metric-card red"><div class="metric-icon">🚨</div><div class="metric-value">${summary.anomalies_detected || 0}</div><div class="metric-label">Anomalies</div></div>
+      <div class="metric-card green"><div class="metric-icon">✅</div><div class="metric-value">${fleet.length - (summary.anomalies_detected || 0)}</div><div class="metric-label">On Track</div></div>
+      <div class="metric-card blue"><div class="metric-icon">🗺️</div><div class="metric-value">${new Set(fleet.map(f=>f.region)).size}</div><div class="metric-label">Regions Active</div></div>`;
+
+    // Init map
+    if (fleetMap) { fleetMap.remove(); fleetMap = null; }
+    fleetMap = L.map('fleetMap', { zoomControl: true, attributionControl: false }).setView([22.5, 79], 5);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 18,
+    }).addTo(fleetMap);
+
+    // Draw corridors
+    CORRIDORS.forEach(([from, to, color]) => {
+      const c1 = CITIES[from], c2 = CITIES[to];
+      L.polyline([[c1.lat, c1.lng], [c2.lat, c2.lng]], {
+        color: color, weight: 2, opacity: 0.35, dashArray: '8, 6',
+      }).addTo(fleetMap);
+    });
+
+    // Draw city hubs
+    Object.values(CITIES).forEach(city => {
+      L.circleMarker([city.lat, city.lng], {
+        radius: 6, color: '#6c5ce7', fillColor: '#6c5ce7', fillOpacity: 0.7, weight: 1,
+      }).addTo(fleetMap).bindTooltip(city.name, {
+        permanent: true, direction: 'top', offset: [0, -8],
+        className: 'city-label',
+      });
+    });
+
+    // Place fleet markers
+    fleet.forEach(ship => {
+      const pos = getShipmentPosition(ship);
+      const res = rMap[ship.shipment_id] || {};
+      const isAnomaly = res.is_anomaly || false;
+      const risk = res.risk_level || 'LOW';
+      const color = riskColor(risk);
+      const score = Math.round((res.anomaly_score || 0) * 100);
+
+      const marker = L.circleMarker([pos.lat, pos.lng], {
+        radius: isAnomaly ? 9 : 6,
+        color: color,
+        fillColor: color,
+        fillOpacity: isAnomaly ? 0.9 : 0.5,
+        weight: isAnomaly ? 3 : 1,
+      }).addTo(fleetMap);
+
+      marker.bindPopup(`
+        <div style="font-family:Inter,sans-serif;min-width:200px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:6px">${ship.shipment_id}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:8px">${capitalize(ship.region)} · ${capitalize(ship.weather_condition)} · ${ship.vehicle_type}</div>
+          <div style="display:flex;gap:12px;font-size:12px">
+            <span>📏 ${ship.distance_km} km</span>
+            <span>📦 ${ship.package_weight_kg} kg</span>
+          </div>
+          <div style="margin-top:8px;padding:6px 10px;border-radius:6px;background:${color}22;color:${color};font-weight:600;font-size:12px;text-align:center">
+            ${isAnomaly ? `🚨 ${risk} — Score: ${score}%` : '✅ Normal'}
+          </div>
+          ${isAnomaly && res.reasons ? `<div style="margin-top:6px;font-size:11px;color:#888">${res.reasons.slice(0,2).map(r=>'⚠️ '+r).join('<br>')}</div>` : ''}
+        </div>
+      `);
+    });
+
+    // Fleet table
+    tableEl.innerHTML = `<table class="data-table">
+      <thead><tr><th>Shipment</th><th>Region</th><th>Weather</th><th>Distance</th><th>Weight</th><th>Vehicle</th><th>Risk</th></tr></thead>
+      <tbody>${fleet.map(s => {
+        const r = rMap[s.shipment_id] || {};
+        const lvl = (r.risk_level || 'LOW').toLowerCase();
+        return `<tr>
+          <td style="font-weight:600">${s.shipment_id}</td>
+          <td>${capitalize(s.region)}</td>
+          <td>${capitalize(s.weather_condition)}</td>
+          <td>${s.distance_km} km</td>
+          <td>${s.package_weight_kg} kg</td>
+          <td>${capitalize(s.vehicle_type)}</td>
+          <td><span class="badge ${lvl}">${r.risk_level || 'LOW'}</span></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+
+    // Force map resize
+    setTimeout(() => fleetMap.invalidateSize(), 200);
+  } catch (e) {
+    metricsEl.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
 }
 
 function alertRowHtml(a, fleet) {

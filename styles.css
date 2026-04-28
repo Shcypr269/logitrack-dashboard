@@ -392,6 +392,29 @@ body {
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 16px; }
 .empty-state p { font-size: 14px; }
 
+/* ═══════ Map Styles ═══════ */
+.city-label {
+  background: rgba(22, 22, 50, 0.85) !important;
+  border: 1px solid rgba(108, 92, 231, 0.4) !important;
+  color: #a29bfe !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+.city-label::before { border-top-color: rgba(108, 92, 231, 0.4) !important; }
+.leaflet-popup-content-wrapper {
+  background: #1a1a3e !important;
+  color: #f0f0f5 !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.5) !important;
+}
+.leaflet-popup-tip { background: #1a1a3e !important; }
+.leaflet-popup-close-button { color: #888 !important; }
+
 /* ═══════ Responsive ═══════ */
 @media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); }

@@ -6,6 +6,8 @@
   <title>LogiTrack AI — Smart Supply Chain Dashboard</title>
   <meta name="description" content="AI-powered supply chain disruption prediction and autonomous rerouting for Indian logistics">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚚</text></svg>">
 </head>
 <body>
@@ -25,6 +27,7 @@
       <a data-page="anomaly" onclick="navigate('anomaly')"><span class="icon">🔍</span> Anomaly Detection</a>
       <a data-page="optimizer" onclick="navigate('optimizer')"><span class="icon">🚚</span> Transport Optimizer</a>
       <a data-page="simulator" onclick="navigate('simulator')"><span class="icon">🧪</span> What-If Simulator</a>
+      <a data-page="livemap" onclick="navigate('livemap')"><span class="icon">🗺️</span> Live Map</a>
       <div class="divider"></div>
       <a data-page="explainability" onclick="navigate('explainability')"><span class="icon">🧠</span> Explainability</a>
     </div>
@@ -168,6 +171,22 @@
         </div>
       </div>
       <div id="explainResults"></div>
+    </section>
+
+    <!-- ═══ LIVE MAP ═══ -->
+    <section id="page-livemap" class="page-section">
+      <div class="page-header">
+        <h2>🗺️ Live Fleet Map</h2>
+        <p>Real-time fleet positions across Indian logistics corridors with ML risk overlay</p>
+      </div>
+      <div class="metrics-grid" id="mapMetrics"></div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
+        <div id="fleetMap" style="height:520px;width:100%;border-radius:var(--radius)"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📋 Fleet Summary</div><button class="btn btn-secondary" onclick="loadLiveMap()">🔄 Refresh</button></div>
+        <div id="mapFleetTable"></div>
+      </div>
     </section>
 
   </main>
